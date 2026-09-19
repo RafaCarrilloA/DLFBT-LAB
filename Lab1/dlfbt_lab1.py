@@ -2,7 +2,7 @@
 # DLFBT 2026/2027
 # Lab assignment 1
 # Authors:
-#   Name1 NIA1 (complete your name and NIA here)
+#   Rafael Carrillo Arroyo 31878112C
 #   Name2 NIA2 (complete your name and NIA here)
 # ===============================================================================
 
@@ -47,11 +47,9 @@ class LinearRegressionModel(object):
             Ouput batch of shape (N, 1) which is the result of applying the
             linear regression model to the input x
         """
-
-        # --- TO-DO block: Compute the model output y
-        pass
-        # --- End of TO-DO block
-
+        # X es una matriz (N,d) y w(d,1)
+        y = x @ self.w + self.b        
+        # Operador alternativo y = np.dot(x, self.w) + self.b
         return y
 
     def compute_gradients(self, x, t):
@@ -77,7 +75,14 @@ class LinearRegressionModel(object):
         y = self.predict(x)
 
         # --- TO-DO block: Compute the gradients db and dw
-        pass
+        error = y - t # (N,1) - (N,1) = (N,1)
+        N = x.shape[0] # Num muestras N
+
+        db = np.mean(error, axis=0, keepdims=True) #Promedio de todos los errores
+        #xis=0 (eje vertical) promediamos filas
+        # sin keepdims la dimension resultante seria (1,) no (1,1), elimina el eje axis=0
+        
+        dw = (x.T @ error) / N        
         # --- End of TO-DO block
 
         return db, dw
@@ -99,7 +104,9 @@ class LinearRegressionModel(object):
         db, dw = self.compute_gradients(x, t)
 
         # --- TO-DO block: Update the model parameters b and w
-        pass
+        # multiplicamos por eta, para ver el tamaño del salto
+        self.b -= eta * db
+        self.w -= eta * dw
         # --- End of TO-DO block
 
     def fit(self, x, t, eta, num_iters):
@@ -189,9 +196,16 @@ class LogisticRegressionModel(LinearRegressionModel):
         return 1.0 / (1.0 + np.exp(-z))
 
     # --- TO-DO block: Overwrite the methods of the LinearRegressionModel class
-    pass
-    # --- End of TO-DO block
 
+    def predict(self, x):
+        """
+        Predicts output probability y for input batch x using the logistic model.
+        """
+        z = x @ self.w + self.b
+        y = LogisticRegressionModel.sigmoid(z)
+        return y
+            
+    # --- End of TO-DO block
     def get_loss(self, x, t):
         """
         Calculates the cross-entropy loss for an input batch (x, t)
