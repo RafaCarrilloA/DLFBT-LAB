@@ -47,7 +47,7 @@ class LinearRegressionModel(object):
             Ouput batch of shape (N, 1) which is the result of applying the
             linear regression model to the input x
         """
-        # X es una matriz (N,d) y w(d,1)
+        # X es una matriz (N,d) y w(d,1), y(N,1)
         y = x @ self.w + self.b        
         # Operador alternativo y = np.dot(x, self.w) + self.b
         return y
@@ -74,7 +74,9 @@ class LinearRegressionModel(object):
         """
         y = self.predict(x)
 
-        # --- TO-DO block: Compute the gradients db and dw
+        # --- TO-DO block: Compute the gradients db and dw 
+        # Calcula las derivadas parciales de la función de pérdida con respecto a los pesos y al sesgo
+        
         error = y - t # (N,1) - (N,1) = (N,1)
         N = x.shape[0] # Num muestras N
 
@@ -131,6 +133,9 @@ class LinearRegressionModel(object):
              Array of shape (num_iters,) with the loss after each training
              iteration
         """
+        #Entrena el modelo ejecutando el bucle de Descenso de Gradiente
+        # a lo largo de un número fijado de iteraciones
+        
         loss = np.zeros(num_iters)
         for i in range(num_iters):
             self.gradient_step(x, t, eta)
@@ -255,8 +260,11 @@ class BasicTF:
         x = tf.Variable(x)
 
         # --- TO-DO block: Define the computational graph within a gradient tape and
-        # --- compute the gradient
-        pass
+        #Se guarda el DAG(Grafo computacion del forward)
+        with tf.GradientTape() as tape:
+            y = f(x)
+        #Se hace el backeard Pass, dando derivada de un punto
+        dy_dx = tape.gradient(y, x)
         # --- End of TO-DO block
 
         return dy_dx
@@ -288,11 +296,15 @@ class BasicTF:
         for i in range(niters):
             # --- TO-DO block: Define the computational graph within a gradient tape and
             # --- compute the gradient
-            pass
+            with tf.GradientTape() as tape:
+                y = f(x)
+            grad = tape.gradient(y, x)
             # --- End of TO-DO block
 
             # --- TO-DO block: Update the value of x using the tf.Variable assign method
-            pass
+            # Actualizamos x hasta llegar a donde f(x) es mas bajo
+            x.assign(x - eta * grad) 
+            # usar assign y no =, no cambia la variable x a tf.tensor(probocando que no se actualice)
             # --- End of TO-DO block
 
             x_history.append(x.numpy())
@@ -341,7 +353,7 @@ class LinearRegressionModel_TF(object):
 
         """
         # --- TO-DO block: Compute the model output y
-        pass
+        y = x @ self.w + self.b
         # --- End of TO-DO block
 
         return y
@@ -367,7 +379,13 @@ class LinearRegressionModel_TF(object):
              Gradient of the loss with respect to the weights, shape (d, 1)
         """
         # --- TO-DO block: Compute the gradients db and dw of the loss function
-        pass
+        # Definimos el contexto para grabar las operaciones
+        with tf.GradientTape() as tape:
+            # Podemos llamar directamente a get_loss ya que internamente usa predict(x)
+            loss = self.get_loss(x, t)
+            
+        # Extraemos las derivadas parciales respecto a b y w (en ese orden)
+        db, dw = tape.gradient(loss, [self.b, self.w])
         # --- End of TO-DO block
 
         return db, dw
@@ -389,8 +407,10 @@ class LinearRegressionModel_TF(object):
         db, dw = self.compute_gradients(x, t)
 
         # --- TO-DO block: Update the model parameters b and w
-        pass
-        # --- End of TO-DO block
+        # assign_sub resta directamente el valor al tensor original de forma in-place
+        self.b.assign(self.b - eta * db)
+        self.w.assign(self.w - eta * dw)
+                # --- End of TO-DO block
 
     def fit(self, x, t, eta, num_iters):
         """
@@ -565,7 +585,21 @@ class NeuralNetwork(object):
         y = []
         # --- TO-DO block: loop in the network layers computing both the pre-
         # --- activation and the activation and appending them to lists z and y.
-        pass
+        # La entrada 'x' actúa como la activación de la primera capa (la capa de entrada).
+        # Lo añadimos a ambas listas para que los índices (0, 1, 2...) de las capas se mantengan alineados.
+        y_prev = x
+        
+        for W, b, a in zip(self.W, self.b, self.a):
+            # Calculamos pre-activación con la salida de la capa anterior
+            z_actual = W @ y_prev + b
+            z.append(z_actual)
+            
+            # Calculamos activación
+            y_actual = a(z_actual)
+            y.append(y_actual)
+            
+            # Actualizamos la variable para la siguiente iteración de la red
+            y_prev = y_actual
         # --- End of TO-DO block
 
         return z, y
@@ -611,7 +645,30 @@ class NeuralNetwork(object):
         # --- TO-DO block: loop in the network layers computing the gradients with
         # --- respect to W and b. Note that the gradients must be computed starting
         # --- by the last layer, it may be useful to traverse the lists backwards.
-        pass
+        # Iteramos desde la última capa (nlayers - 1) hasta la capa 0
+        # para que el índice [i] coincida siempre con la entrada de esa capa.
+        activaciones = [x] + y
+        
+        for i in reversed(range(self.nlayers)):
+            # Como 'z' ya no tiene 'x', el índice de la pre-activación es simplemente 'i'
+            dz = dy * self.da[i](z[i])
+            
+            # Los pesos se multiplican por la activación de la capa anterior transpuesta
+            dw_i = dz @ activaciones[i].T
+            
+            # Sesgos
+            db_i = np.sum(dz, axis=1, keepdims=True)
+            
+            # Propagamos el error a la capa anterior
+            dy = self.W[i].T @ dz
+            
+            dW.append(dw_i)
+            db.append(db_i)
+            
+        # Como hemos recorrido la red desde la salida hasta la entrada, 
+        # las listas están al revés. Las invertimos para restaurar el orden correcto.
+        dW.reverse()
+        db.reverse()
         # --- End of TO-DO block
 
         return dW, db
@@ -633,7 +690,11 @@ class NeuralNetwork(object):
         dW, db = self.compute_gradients(x, t)
 
         # --- TO-DO block: Loop in layers updating the model parameters b and w
-        pass
+        for i in range(self.nlayers):
+            # Actualizamos los pesos y sesgos restándoles el gradiente multiplicado
+            # por la tasa de aprendizaje (eta), lo que define el tamaño del "paso"
+            self.W[i] -= eta * dW[i]
+            self.b[i] -= eta * db[i]
         # --- End of TO-DO block
 
     def fit(self, x, t, eta, num_epochs, batch_size, loss_function):
@@ -787,7 +848,16 @@ class NeuralNetwork_TF(object):
         # --- TO-DO block: loop in the network layers computing the activations.
         # --- The activation of the last layer should be stored at variable y to
         # --- be returned.
-        pass
+        # Iteramos sobre los pesos, sesgos y funciones de activación
+        for W, b, a in zip(self.W, self.b, self.a):
+            # Pre-activación: multiplicación matricial y suma del sesgo
+            z = tf.matmul(W, y) + b
+            
+            # Activación: aplicamos la función de activación (si existe)
+            if a is not None:
+                y = a(z)
+            else:
+                y = z
         # --- End of TO-DO block
 
         return y
@@ -818,7 +888,13 @@ class NeuralNetwork_TF(object):
             the weights of each layer, for input batch x.
         """
         # --- TO-DO block: compute the gradients db, dW using the gradient tape
-        pass
+        with tf.GradientTape() as tape:
+            # Calculamos la pérdida (que internamente llama al forward pass)
+            loss = self.get_loss(x, t, loss_function)
+            
+        # Extraemos las listas de derivadas parciales para los sesgos y pesos
+        db = tape.gradient(loss, self.b)
+        dW = tape.gradient(loss, self.W)
         # --- End of TO-DO block
 
         return db, dW
@@ -845,7 +921,10 @@ class NeuralNetwork_TF(object):
         dB, dW = self.compute_gradients(x, t, loss_function)
 
         # --- TO-DO block: Loop in layers updating the model parameters b and w
-        pass
+        for i in range(self.nlayers):
+            # Se resta el gradiente multiplicado por la tasa de aprendizaje in-place
+            self.b[i].assign_sub(eta * dB[i]) # otra forma
+            self.W[i].assign_sub(eta * dW[i])
         # --- End of TO-DO block
 
     def fit(self, x, t, eta, num_epochs, batch_size, loss_function):
