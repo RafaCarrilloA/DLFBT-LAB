@@ -2,13 +2,13 @@
 # DLFBT 2026/2027
 # Lab assignment 2
 # Authors:
-#   Name1 NIA1 (complete your name and NIA here)
-#   Name2 NIA2 (complete your name and NIA here)
+#   RAFAEL CARRILLO ARROYO 31878112C
+#   AMIRHOSSEIN ROODAKI Z64987649
 # ===============================================================================
 
 import numpy as np
 import tensorflow as tf
-from time import perf_counter
+from time import perf_counter, time
 from dataclasses import dataclass
 from typing import Dict, Optional
 from sklearn.preprocessing import StandardScaler
@@ -48,13 +48,30 @@ def load_phoneme():
     """
 
     # TODO: load the CSV.
-    # dataset = ...
+    dataset = np.loadtxt("../data/lab2/phoneme.csv", delimiter=",")
 
     # TODO:
-    # X = ...
-    # y = ...
+    X = dataset[:, :-1]
+    y = dataset[:, -1]
 
-    raise NotImplementedError("TODO: implement load_phoneme")
+    # TODO: perform a shape / validity check.
+    # assert X.ndim == 2
+    if X.ndim != 2:
+        raise ValueError()
+    # assert y.ndim == 1
+    if y.ndim != 1:
+        raise ValueError()
+    # assert len(X) == len(y)
+    if len(X) != len(y):
+        raise ValueError()
+    # assert X.shape[1] == 5
+    if X.shape[1] != 5:
+        raise ValueError()
+    # assert set(np.unique(y)) == {0, 1}
+    if set(np.unique(y)) != {0, 1}:
+        raise ValueError()
+
+    return X, y
 
 
 def dataset_overview(X, y):
@@ -84,6 +101,7 @@ class DataSplit:
 def prepare_data(
     X,
     y,
+    *,
     test_size=0.20,
     val_size=0.20,
     normalize=True,
@@ -126,16 +144,52 @@ def prepare_data(
     """
 
     # TODO: validate test_size and val_size.
+    if not (0 < test_size < 1) or not (0 < val_size < 1):
+        raise ValueError()
+    if test_size + val_size >= 1:
+        raise ValueError()
+    if test_size + val_size > 0.5:
+        raise ValueError()
 
     # TODO: first split -> train+validation and test.
+    X_train_val, X_test, y_train_val, y_test = train_test_split(
+        X,
+        y,
+        test_size=test_size,
+        stratify=y,
+        random_state=random_state,
+    )
+
+    # TODO: compute the validation fraction relative to train+validation.
+    val_fraction = val_size / (1 - test_size)
 
     # TODO: second split -> train and validation.
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_train_val,
+        y_train_val,
+        test_size=val_fraction,
+        stratify=y_train_val,
+        random_state=random_state,
+    )
 
-    # TODO: optionally fit StandardScaler.
+    # TODO: optionally fit StandardScaler ONLY on X_train.
+    scaler = None
+    if normalize:
+        scaler = StandardScaler()
+        X_train = scaler.fit_transform(X_train)
+        X_val = scaler.transform(X_val)
+        X_test = scaler.transform(X_test)
 
     # TODO: return DataSplit(...)
-
-    raise NotImplementedError("TODO: implement prepare_data")
+    return DataSplit(
+        X_train=X_train,
+        X_val=X_val,
+        X_test=X_test,
+        y_train=y_train,
+        y_val=y_val,
+        y_test=y_test,
+        scaler=scaler,
+    )
 
 
 def build_baseline_model(input_dim, hidden_units=8):
@@ -158,9 +212,15 @@ def build_baseline_model(input_dim, hidden_units=8):
     """
 
     # TODO:
-    # model = tf.keras.Sequential([...])
+    model = tf.keras.Sequential(
+        [
+            tf.keras.layers.InputLayer(input_shape=(input_dim,)),
+            tf.keras.layers.Dense(hidden_units, activation="relu"),
+            tf.keras.layers.Dense(1, activation="sigmoid"),
+        ]
+    )
 
-    raise NotImplementedError("TODO: implement build_baseline_model")
+    return model
 
 
 def compile_binary_model(
@@ -196,13 +256,26 @@ def compile_binary_model(
     # TODO:
     # If optimizer is a string AND learning_rate is provided,
     # create the appropriate tf.keras.optimizers.* object.
+    if isinstance(optimizer, str) and learning_rate is not None:
+        if optimizer.lower() == "sgd":
+            optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate)
+        elif optimizer.lower() == "adagrad":
+            optimizer = tf.keras.optimizers.Adagrad(learning_rate=learning_rate)
+        elif optimizer.lower() == "rmsprop":
+            optimizer = tf.keras.optimizers.RMSprop(learning_rate=learning_rate)
+        elif optimizer.lower() == "adam":
+            optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+        else:
+            raise ValueError()
 
     # TODO:
-    # model.compile(
-    #
-    # )
+    model.compile(
+        optimizer=optimizer,
+        loss="binary_crossentropy",
+        metrics=["accuracy"],
+    )
 
-    raise NotImplementedError("TODO: implement compile_binary_model")
+    return model
 
 
 def make_early_stopping(patience=20):
@@ -252,9 +325,17 @@ def train_model(
     """
 
     # TODO:
-    # history = model.fit(...)
+    history = model.fit(
+        split.X_train,
+        split.y_train,
+        validation_data=(split.X_val, split.y_val),
+        epochs=epochs,
+        batch_size=batch_size,
+        callbacks=[make_early_stopping(patience)],
+        verbose=verbose,
+    )
 
-    raise NotImplementedError("TODO: implement train_model")
+    return history
 
 
 def evaluate_model(model, split):
@@ -276,9 +357,11 @@ def evaluate_model(model, split):
     """
 
     # TODO:
-    # loss, accuracy = model.evaluate(...)
-
-    raise NotImplementedError("TODO: implement evaluate_model")
+    loss, accuracy = model.evaluate(split.X_test, split.y_test)
+    return {
+        "test_loss": float(loss),
+        "test_accuracy": float(accuracy),
+    }
 
 
 def build_improved_model(input_dim):
@@ -304,10 +387,20 @@ def build_improved_model(input_dim):
     """
 
     # TODO: build the architecture.
+    improved_model = tf.keras.Sequential(
+        [
+            tf.keras.layers.InputLayer(input_shape=(input_dim,)),
+            tf.keras.layers.Dense(32, activation="relu"),
+            tf.keras.layers.Dropout(0.15),
+            tf.keras.layers.Dense(16, activation="relu"),
+            tf.keras.layers.Dense(1, activation="sigmoid"),
+        ]
+    )
 
     # TODO: compile it, preferably by reusing compile_binary_model(...).
+    compile_binary_model(improved_model, optimizer="adam", learning_rate=1e-3)
 
-    raise NotImplementedError("TODO: implement build_improved_model")
+    return improved_model
 
 
 def build_regularized_model(input_dim, l2_strength=1e-4):
@@ -330,11 +423,19 @@ def build_regularized_model(input_dim, l2_strength=1e-4):
     """
 
     # TODO:
-    # reg = tf.keras.regularizers.l2(...)
+    reg = tf.keras.regularizers.l2(l2_strength)
 
     # TODO: build and return the Sequential model.
+    regularized_model = tf.keras.Sequential(
+        [
+            tf.keras.layers.InputLayer(input_shape=(input_dim,)),
+            tf.keras.layers.Dense(32, activation="relu", kernel_regularizer=reg),
+            tf.keras.layers.Dense(16, activation="relu", kernel_regularizer=reg),
+            tf.keras.layers.Dense(1, activation="sigmoid"),
+        ]
+    )
 
-    raise NotImplementedError("TODO: implement build_regularized_model")
+    return regularized_model
 
 
 def build_dropout_model(input_dim, rate=0.25):
@@ -358,8 +459,17 @@ def build_dropout_model(input_dim, rate=0.25):
     """
 
     # TODO: build and return the Sequential model.
+    dropout_model = tf.keras.Sequential(
+        [
+            tf.keras.layers.InputLayer(input_shape=(input_dim,)),
+            tf.keras.layers.Dense(32, activation="relu"),
+            tf.keras.layers.Dropout(rate),
+            tf.keras.layers.Dense(16, activation="relu"),
+            tf.keras.layers.Dense(1, activation="sigmoid"),
+        ]
+    )
 
-    raise NotImplementedError("TODO: implement build_dropout_model")
+    return dropout_model
 
 
 def optimizer_from_name(name, learning_rate=1e-3):
@@ -404,13 +514,29 @@ def optimizer_from_name(name, learning_rate=1e-3):
     """
 
     # TODO: return the matching tf.keras.optimizers optimizer.
-
-    raise NotImplementedError("TODO: implement optimizer_from_name")
+    name = name.lower().replace(" ", "").replace("-", "")
+    if name == "sgd":
+        return tf.keras.optimizers.SGD(learning_rate=learning_rate)
+    elif name == "momentum":
+        return tf.keras.optimizers.SGD(learning_rate=learning_rate, momentum=0.9)
+    elif name == "nesterov":
+        return tf.keras.optimizers.SGD(
+            learning_rate=learning_rate, momentum=0.9, nesterov=True
+        )
+    elif name == "adagrad":
+        return tf.keras.optimizers.Adagrad(learning_rate=learning_rate)
+    elif name == "rmsprop":
+        return tf.keras.optimizers.RMSprop(learning_rate=learning_rate)
+    elif name == "adam":
+        return tf.keras.optimizers.Adam(learning_rate=learning_rate)
+    else:
+        raise ValueError()
 
 
 def run_optimizer_experiment(
     split,
     optimizer_name,
+    *,
     epochs=150,
     batch_size=32,
     learning_rate=1e-3,
@@ -448,24 +574,45 @@ def run_optimizer_experiment(
     """
 
     # TODO: make the run reproducible.
+    set_reproducible(seed)
 
     # TODO: build model.
+    model = build_baseline_model(input_dim=split.X_train.shape[1])
 
     # TODO: construct optimizer.
+    optimizer = optimizer_from_name(optimizer_name, learning_rate=learning_rate)
 
     # TODO: compile model.
+    model.compile(optimizer=optimizer, loss="binary_crossentropy", metrics=["accuracy"])
 
     # TODO: record start time.
+    start_time = time()
 
     # TODO: train.
+    history = train_model(
+        model,
+        split,
+        epochs=epochs,
+        batch_size=batch_size,
+        patience=patience,
+    )
 
     # TODO: compute elapsed time.
+    elapsed_time = time() - start_time
 
     # TODO: evaluate.
+    evaluation = evaluate_model(model, split)
 
     # TODO: return the result dictionary.
-
-    raise NotImplementedError("TODO: implement run_optimizer_experiment")
+    return {
+        "optimizer": optimizer_name,
+        "epochs_run": len(history.history["loss"]),
+        "seconds": elapsed_time,
+        "test_loss": evaluation["test_loss"],
+        "test_accuracy": evaluation["test_accuracy"],
+        "history": history.history,
+        "model": model,
+    }
 
 
 def compare_optimizers(
@@ -499,12 +646,11 @@ def compare_optimizers(
 
     TODO
     ----
-    A compact loop or list is sufficient.
+    A compact loop or list comprehension is sufficient.
     """
 
     # TODO: call run_optimizer_experiment once per optimizer name.
-
-    raise NotImplementedError("TODO: implement compare_optimizers")
+    return [run_optimizer_experiment(split, name, **kwargs) for name in names]
 
 
 def available_devices():
